@@ -4,19 +4,16 @@ const { Telemetry } = require("../../../models/telemetry");
 const { DocumentVectors } = require("../../../models/vectors");
 const { Workspace } = require("../../../models/workspace");
 const { WorkspaceChats } = require("../../../models/workspaceChats");
-const { chatWithWorkspace } = require("../../../utils/chats");
 const { getVectorDbClass } = require("../../../utils/helpers");
 const { multiUserMode, reqBody } = require("../../../utils/http");
 const { validApiKey } = require("../../../utils/middleware/validApiKey");
-const {
-  streamChatWithWorkspace,
-  VALID_CHAT_MODE,
-} = require("../../../utils/chats/stream");
+const { VALID_CHAT_MODE } = require("../../../utils/chats/stream");
 const { EventLogs } = require("../../../models/eventLogs");
 const {
   convertToChatHistory,
   writeResponseChunk,
 } = require("../../../utils/helpers/chat/responses");
+const { ApiChatHandler } = require("../../../utils/chats/apiChatHandler");
 
 function apiWorkspaceEndpoints(app) {
   if (!app) return;
@@ -73,13 +70,14 @@ function apiWorkspaceEndpoints(app) {
         LLMSelection: process.env.LLM_PROVIDER || "openai",
         Embedder: process.env.EMBEDDING_ENGINE || "inherit",
         VectorDbSelection: process.env.VECTOR_DB || "lancedb",
+        TTSSelection: process.env.TTS_PROVIDER || "native",
       });
       await EventLogs.logEvent("api_workspace_created", {
         workspaceName: workspace?.name || "Unknown Workspace",
       });
       response.status(200).json({ workspace, message });
     } catch (e) {
-      console.log(e.message, e);
+      console.error(e.message, e);
       response.sendStatus(500).end();
     }
   });
@@ -103,7 +101,8 @@ function apiWorkspaceEndpoints(app) {
                   "openAiTemp": null,
                   "lastUpdatedAt": "2023-08-17 00:45:03",
                   "openAiHistory": 20,
-                  "openAiPrompt": null
+                  "openAiPrompt": null,
+                  "threads": []
                 }
               ],
             }
@@ -118,10 +117,20 @@ function apiWorkspaceEndpoints(app) {
     }
     */
     try {
-      const workspaces = await Workspace.where();
+      const workspaces = await Workspace._findMany({
+        where: {},
+        include: {
+          threads: {
+            select: {
+              user_id: true,
+              slug: true,
+            },
+          },
+        },
+      });
       response.status(200).json({ workspaces });
     } catch (e) {
-      console.log(e.message, e);
+      console.error(e.message, e);
       response.sendStatus(500).end();
     }
   });
@@ -130,7 +139,6 @@ function apiWorkspaceEndpoints(app) {
     /*
     #swagger.tags = ['Workspaces']
     #swagger.description = 'Get a workspace by its unique slug.'
-    #swagger.path = '/v1/workspace/{slug}'
     #swagger.parameters['slug'] = {
         in: 'path',
         description: 'Unique slug of workspace to find',
@@ -152,7 +160,8 @@ function apiWorkspaceEndpoints(app) {
                 "lastUpdatedAt": "2023-08-17 00:45:03",
                 "openAiHistory": 20,
                 "openAiPrompt": null,
-                "documents": []
+                "documents": [],
+                "threads": []
               }
             }
           }
@@ -167,10 +176,24 @@ function apiWorkspaceEndpoints(app) {
     */
     try {
       const { slug } = request.params;
-      const workspace = await Workspace.get({ slug });
+      const workspace = await Workspace._findMany({
+        where: {
+          slug: String(slug),
+        },
+        include: {
+          documents: true,
+          threads: {
+            select: {
+              user_id: true,
+              slug: true,
+            },
+          },
+        },
+      });
+
       response.status(200).json({ workspace });
     } catch (e) {
-      console.log(e.message, e);
+      console.error(e.message, e);
       response.sendStatus(500).end();
     }
   });
@@ -182,7 +205,6 @@ function apiWorkspaceEndpoints(app) {
       /*
     #swagger.tags = ['Workspaces']
     #swagger.description = 'Deletes a workspace by its slug.'
-    #swagger.path = '/v1/workspace/{slug}'
     #swagger.parameters['slug'] = {
         in: 'path',
         description: 'Unique slug of workspace to delete',
@@ -221,7 +243,7 @@ function apiWorkspaceEndpoints(app) {
         }
         response.sendStatus(200).end();
       } catch (e) {
-        console.log(e.message, e);
+        console.error(e.message, e);
         response.sendStatus(500).end();
       }
     }
@@ -234,7 +256,6 @@ function apiWorkspaceEndpoints(app) {
       /*
     #swagger.tags = ['Workspaces']
     #swagger.description = 'Update workspace settings by its unique slug.'
-    #swagger.path = '/v1/workspace/{slug}/update'
     #swagger.parameters['slug'] = {
         in: 'path',
         description: 'Unique slug of workspace to find',
@@ -301,7 +322,7 @@ function apiWorkspaceEndpoints(app) {
         );
         response.status(200).json({ workspace, message });
       } catch (e) {
-        console.log(e.message, e);
+        console.error(e.message, e);
         response.sendStatus(500).end();
       }
     }
@@ -314,7 +335,6 @@ function apiWorkspaceEndpoints(app) {
       /*
     #swagger.tags = ['Workspaces']
     #swagger.description = 'Get a workspaces chats regardless of user by its unique slug.'
-    #swagger.path = '/v1/workspace/{slug}/chats'
     #swagger.parameters['slug'] = {
         in: 'path',
         description: 'Unique slug of workspace to find',
@@ -362,7 +382,7 @@ function apiWorkspaceEndpoints(app) {
         const history = await WorkspaceChats.forWorkspace(workspace.id);
         response.status(200).json({ history: convertToChatHistory(history) });
       } catch (e) {
-        console.log(e.message, e);
+        console.error(e.message, e);
         response.sendStatus(500).end();
       }
     }
@@ -375,7 +395,6 @@ function apiWorkspaceEndpoints(app) {
       /*
     #swagger.tags = ['Workspaces']
     #swagger.description = 'Add or remove documents from a workspace by its unique slug.'
-    #swagger.path = '/v1/workspace/{slug}/update-embeddings'
     #swagger.parameters['slug'] = {
         in: 'path',
         description: 'Unique slug of workspace to find',
@@ -441,7 +460,7 @@ function apiWorkspaceEndpoints(app) {
         });
         response.status(200).json({ workspace: updatedWorkspace });
       } catch (e) {
-        console.log(e.message, e);
+        console.error(e.message, e);
         response.sendStatus(500).end();
       }
     }
@@ -454,7 +473,6 @@ function apiWorkspaceEndpoints(app) {
       /*
       #swagger.tags = ['Workspaces']
       #swagger.description = 'Add or remove pin from a document in a workspace by its unique slug.'
-      #swagger.path = '/workspace/{slug}/update-pin'
       #swagger.parameters['slug'] = {
           in: 'path',
           description: 'Unique slug of workspace to find',
@@ -532,7 +550,8 @@ function apiWorkspaceEndpoints(app) {
          "application/json": {
            example: {
              message: "What is AnythingLLM?",
-             mode: "query | chat"
+             mode: "query | chat",
+             sessionId: "identifier-to-partition-chats-by-external-id"
            }
          }
        }
@@ -562,8 +581,8 @@ function apiWorkspaceEndpoints(app) {
    */
       try {
         const { slug } = request.params;
-        const { message, mode = "query" } = reqBody(request);
-        const workspace = await Workspace.get({ slug });
+        const { message, mode = "query", sessionId = null } = reqBody(request);
+        const workspace = await Workspace.get({ slug: String(slug) });
 
         if (!workspace) {
           response.status(400).json({
@@ -591,19 +610,29 @@ function apiWorkspaceEndpoints(app) {
           return;
         }
 
-        const result = await chatWithWorkspace(workspace, message, mode);
+        const result = await ApiChatHandler.chatSync({
+          workspace,
+          message,
+          mode,
+          user: null,
+          thread: null,
+          sessionId: !!sessionId ? String(sessionId) : null,
+        });
+
         await Telemetry.sendTelemetry("sent_chat", {
-          LLMSelection: process.env.LLM_PROVIDER || "openai",
+          LLMSelection:
+            workspace.chatProvider ?? process.env.LLM_PROVIDER ?? "openai",
           Embedder: process.env.EMBEDDING_ENGINE || "inherit",
           VectorDbSelection: process.env.VECTOR_DB || "lancedb",
+          TTSSelection: process.env.TTS_PROVIDER || "native",
         });
         await EventLogs.logEvent("api_sent_chat", {
           workspaceName: workspace?.name,
           chatModel: workspace?.chatModel || "System Default",
         });
-        response.status(200).json({ ...result });
+        return response.status(200).json({ ...result });
       } catch (e) {
-        console.log(e.message, e);
+        console.error(e.message, e);
         response.status(500).json({
           id: uuidv4(),
           type: "abort",
@@ -631,7 +660,8 @@ function apiWorkspaceEndpoints(app) {
          "application/json": {
            example: {
              message: "What is AnythingLLM?",
-             mode: "query | chat"
+             mode: "query | chat",
+             sessionId: "identifier-to-partition-chats-by-external-id"
            }
          }
        }
@@ -679,8 +709,8 @@ function apiWorkspaceEndpoints(app) {
    */
       try {
         const { slug } = request.params;
-        const { message, mode = "query" } = reqBody(request);
-        const workspace = await Workspace.get({ slug });
+        const { message, mode = "query", sessionId = null } = reqBody(request);
+        const workspace = await Workspace.get({ slug: String(slug) });
 
         if (!workspace) {
           response.status(400).json({
@@ -714,11 +744,21 @@ function apiWorkspaceEndpoints(app) {
         response.setHeader("Connection", "keep-alive");
         response.flushHeaders();
 
-        await streamChatWithWorkspace(response, workspace, message, mode);
+        await ApiChatHandler.streamChat({
+          response,
+          workspace,
+          message,
+          mode,
+          user: null,
+          thread: null,
+          sessionId: !!sessionId ? String(sessionId) : null,
+        });
         await Telemetry.sendTelemetry("sent_chat", {
-          LLMSelection: process.env.LLM_PROVIDER || "openai",
+          LLMSelection:
+            workspace.chatProvider ?? process.env.LLM_PROVIDER ?? "openai",
           Embedder: process.env.EMBEDDING_ENGINE || "inherit",
           VectorDbSelection: process.env.VECTOR_DB || "lancedb",
+          TTSSelection: process.env.TTS_PROVIDER || "native",
         });
         await EventLogs.logEvent("api_sent_chat", {
           workspaceName: workspace?.name,
@@ -726,7 +766,7 @@ function apiWorkspaceEndpoints(app) {
         });
         response.end();
       } catch (e) {
-        console.log(e.message, e);
+        console.error(e.message, e);
         writeResponseChunk(response, {
           id: uuidv4(),
           type: "abort",

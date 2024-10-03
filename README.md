@@ -55,7 +55,8 @@ AnythingLLM divides your documents into objects called `workspaces`. A Workspace
 
 ## Cool features of AnythingLLM
 
-- 🆕 **Multi-modal support (both closed and open-source LLMs!)**
+- 🆕 [**Custom AI Agents**](https://docs.anythingllm.com/agent/custom/introduction)
+- 🖼️ **Multi-modal support (both closed and open-source LLMs!)**
 - 👤 Multi-user instance support and permissioning _Docker version only_
 - 🦾 Agents inside your workspace (browse the web, run code, etc)
 - 💬 [Custom Embeddable Chat widget for your website](./embed/README.md) _Docker version only_
@@ -69,7 +70,7 @@ AnythingLLM divides your documents into objects called `workspaces`. A Workspace
 
 ### Supported LLMs, Embedder Models, Speech models, and Vector Databases
 
-**Language Learning Models:**
+**Large Language Models (LLMs):**
 
 - [Any open-source llama.cpp compatible model](/server/storage/models/README.md#text-generation-llm-selection)
 - [OpenAI](https://openai.com)
@@ -83,8 +84,10 @@ AnythingLLM divides your documents into objects called `workspaces`. A Workspace
 - [LM Studio (all models)](https://lmstudio.ai)
 - [LocalAi (all models)](https://localai.io/)
 - [Together AI (chat models)](https://www.together.ai/)
+- [Fireworks AI  (chat models)](https://fireworks.ai/)
 - [Perplexity (chat models)](https://www.perplexity.ai/)
 - [OpenRouter (chat models)](https://openrouter.ai/)
+- [DeepSeek (chat models)](https://deepseek.com/)
 - [Mistral](https://mistral.ai/)
 - [Groq](https://groq.com/)
 - [Cohere](https://cohere.com/)
@@ -137,7 +140,8 @@ This monorepo consists of three main sections:
 - `server`: A NodeJS express server to handle all the interactions and do all the vectorDB management and LLM interactions.
 - `collector`: NodeJS express server that process and parses documents from the UI.
 - `docker`: Docker instructions and build process + information for building from source.
-- `embed`: Submodule specifically for generation & creation of the [web embed widget](https://github.com/Mintplex-Labs/anythingllm-embed).
+- `embed`: Submodule for generation & creation of the [web embed widget](https://github.com/Mintplex-Labs/anythingllm-embed).
+- `browser-extension`: Submodule for the [chrome browser extension](https://github.com/Mintplex-Labs/anythingllm-extension).
 
 ## 🛳 Self Hosting
 
